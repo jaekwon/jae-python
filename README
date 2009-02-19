@@ -1,0 +1,2 @@
+The reason for __init__.py is because this directory is included as a 'utils' module in a personal project.
+I would create a git repo in '../', but that would clash with the git repo for the root project.
