@@ -1,0 +1,225 @@
+# i think i got some feedback from Ben West for this file.
+
+import random
+#from py.magic import greenlet
+from greenlet import greenlet
+import pdb
+
+# set up logging
+import logging
+logging.basicConfig(format="%(name)-20s:\t%(message)s")
+logging.debug("program started.")
+
+def random_move():
+    return random.choice([FOLD, CALL, BET])
+
+FOLD = "fold"
+CALL = "call"
+BET = "bet"
+
+class Player(greenlet):
+
+    def __init__(self, name):
+        self.name = name
+        super(Player, self).__init__(self.run, name)
+        self.bank = 1000
+        self.log = logging.getLogger(name)
+
+    def bring_to_game(self, game):
+        self.game = game
+    
+    def run(self):
+
+        while True:
+            try:
+                while True:
+                    move = random_move()
+    
+                    self.log.info("[%s] - %s" % (move, str(self.dealt_card)))   
+                    self.game.switch(move)
+            except NewRound:
+                pass
+
+
+class IllegalMoveException(Exception):
+    pass
+
+class NewRound(Exception):
+    pass
+
+class NewStage(Exception):
+    pass
+
+class SimpleGame(greenlet):
+    
+    def __init__(self):
+        super(SimpleGame, self).__init__(self.run, "^^game^^")
+        self.log = logging.getLogger("simple game")
+
+        self.level = 1
+        self.players = [Player("^^%s^^" % x) for x in range(4)]
+        for player in self.players:
+            player.bring_to_game(self)
+        self.set_debug()
+
+
+    def set_debug(self):
+        for player in self.players:
+            player.log.setLevel(logging.INFO)
+        self.log.setLevel(logging.WARN)
+        
+    def deal(self, target_player = None):
+        if target_player == None:
+            for player in self.players:
+                player.dealt_card = []
+                for i in range(2):
+                    dealt = random.choice(list(self.cards))
+                    self.cards.remove(dealt)
+                    player.dealt_card.append(dealt)
+        else:
+            target_player.dealt_card = dealt = random.choice(list(self.cards))
+            self.cards.remove(dealt)
+
+    def run(self):
+        print "starting new round"
+        MAX = 10000
+        scores = []
+        import time
+        times  = []
+        for x in xrange(MAX):
+            start = time.time()
+            try:
+                self.moves = []
+
+                self.table_money = 0
+                self.playeri = PlayerIterator(self.players, 0)
+                self.playeri.next() # move button over
+                self.playeri.mark() # put button down? 
+                self.cards = set(range(52))
+
+                def collect_money(player, blinds):
+                    money = blinds * self.level
+                    self.table_money += money
+                    player.bank -= money
+                    self.log.info("%s put $%d" % (player.name, money))
+
+                def reward_pot(player):
+                    player.bank += self.table_money
+                    self.log.warn("%s wins pot $%d" % (player.name, self.table_money))
+                    self.table_money = 0
+
+                for i in ['preflop', 'flop', 'turn', 'river']: # three stages
+
+                    self.stage = i
+                    self.playeri.reset()
+                    self.bet_level = 0
+                    self.player_bet_levels = {}
+                    self.called_players = []
+                    self.last_bettor = None
+                    self.log.warn(" ------   %s of game   ------ " % i)
+
+                    # deal cards    
+                    for player in self.players:
+                        self.player_bet_levels[player] = 0
+                        if self.stage != 'preflop':
+                            self.deal(player)
+                    if self.stage == 'preflop':
+                        self.deal()
+
+                    try:
+                        for player in self.playeri:
+                            self.log.debug("switching to player %s" % str(player.name))
+                            player_move = player.switch()
+                            self.moves.append((player, player_move))
+                    
+                            if player_move == FOLD:
+                                self.playeri.remove()
+                                self.log.info("player %s folded" % str(player.name))
+                                if len(self.playeri) == 1:
+                                    reward_pot(self.playeri.current())
+                                    raise NewRound, "player %s won" % self.playeri.current().name
+                            elif player_move == CALL:
+                                self.log.info("player %s called" % str(player.name))
+                                self.called_players.append(player)
+                                called_blinds = self.bet_level - self.player_bet_levels[player]
+                                collect_money(player, called_blinds)
+                                if len(self.called_players) + (self.last_bettor and 1 or 0) == len(self.players):
+                                    raise NewStage, "all players called, new stage coming"
+                            elif player_move == BET:
+                                self.log.info("player %s bet" % str(player.name))
+                                self.called_players = []
+                                self.last_bettor = player
+                                called_blinds = self.bet_level - self.player_bet_levels[player]
+                                bet_blinds = called_blinds + 1
+                                collect_money(player, bet_blinds)
+                                self.bet_level += 1
+                            else:
+                                raise IllegalMoveException, "unknown move!"
+                    except NewStage, e:
+                        self.log.debug(e.message)
+            except NewRound:    
+                scores.append(len(self.moves))
+                times.append(time.time() - start)
+                print "new round!"              
+        
+        print "Total Runs: %s" % MAX
+        print "Total Moves: %s" % sum(scores)
+        print "Average Moves Per Run: %s" % (float(float(sum(scores))/float(MAX)))
+        print "Total Measured Time: %s" % sum(times)
+        print "Average Time: %s" % (float(float(sum(times))/float(MAX)))
+                    
+class PlayerIterator(object):
+    """
+        a = poker.PlayerIterator(['a', 'b', 'c', 'e'], 0)
+        a.current() # 'a'
+        a.get(0)    # 'a'
+        a.get(-1)   # 'e'
+        a.next()    # 'a'
+        a.next()    # 'b'
+        a.get(-1)   # 'a'
+    
+        for i in a:
+            print i # loops forever
+
+    """
+    
+    def __init__(self, players, offset):
+        assert 0 <= offset < len(players)
+        self.players = players[:]
+        self.offset = (offset - 1) % len(players)
+    
+    def __iter__(self):
+        return self
+
+    def next(self): 
+        self.offset = (self.offset + 1) % len(self.players)
+        return self.players[self.offset]
+
+    def current(self):
+        return self.players[self.offset]
+
+    def get(self, relative_index):
+        return self.players[(self.offset + relative_index) % len(self.players)]
+
+    def mark(self):
+        self._mark = self.offset
+
+    def reset(self):
+        self.offset = self._mark
+
+    def remove(self):
+        """ Remove current user from this iterator. calling "current" will return
+            the previous user
+        """
+        if self.players:
+            del self.players[self.offset]
+            if self.players:
+                self.offset = (self.offset - 1) % len(self.players)
+        else:
+            raise EmptyException, "cannot remove from an empty list of players"
+
+    def __len__(self):
+        return len(self.players)
+
+game = SimpleGame()
+game.switch()       

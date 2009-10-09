@@ -1,0 +1,3 @@
+this is my implementation of the greenlet library for python, as an escape from boredom.
+i tested it with a basic implementation of a poker dealer. 
+it didn't prove to be all that useful, although it was fun programming it. 
