@@ -86,12 +86,14 @@ class GeneratorContextManager(object):
 				# between the throw() protocol and the __exit__()
 				# protocol.
 				#
+				import sys
 				if sys.exc_info()[1] is not value:
 					raise
  
-@preserve_signature
+#@preserve_signature
 def contextmanager(func):
 	def helper(*args, **kwds):
 		return GeneratorContextManager(func(*args, **kwds))
 	return helper
 
+from alist import AssociativeList as alist

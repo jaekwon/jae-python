@@ -16,18 +16,38 @@ class StatesTest(unittest.TestCase):
 		for new_state in ['foo', 'bar', 'baz', None, 'baz']:
 			switch_and_assert(new_state)	
 
-	def testLimit(self):
+	def testBadStartState(self):
 		all_states = ['foo', 'bar', 'baz']
 
 		with throwing(states.IllegalStateException):
 			# should throw because 'None' is not in the default state
 			smachine = states.StateMachine(all_states)
-			assert False
 
 		smachine = states.StateMachine(all_states, 'foo')
 		assert smachine.current == 'foo'
 
+	def testIllegalTransitionException(self):
+		# testing attempts to switch to states not allowed by the 
+		# restrictions dict.
+		restrictions = {'foo': 'bar',          # foo must go to bar
+						'bar': ['foo', 'baz'], # bar must go to foo or baz
+						'baz': None}           # baz is the end state
+		smachine = states.StateMachine(start='foo', restrictions=restrictions)
+		smachine.switch('bar')
+		smachine.switch('foo')
+		with throwing(states.IllegalTransitionException):
+			smachine.switch('baz')
+		smachine.switch('bar')
+		smachine.switch('baz')
+		with throwing(states.IllegalTransitionException):
+			smachine.switch('foo')
+		with throwing(states.IllegalTransitionException):
+			smachine.switch('bar')
+		smachine.switch('baz') # does nothing
+		smachine.switch('baz') # does nothing
+
 	def testTransitionRules(self):
+		# testing the 'switch_by' method
 		smachine = states.StateMachine(start=1)
 		rules_1 = {1:2, 2:3, 3:1}
 		rules_2 = {1:3, 3:2, 2:1}
@@ -49,7 +69,7 @@ class StatesTest(unittest.TestCase):
 
 def throwing(exception_class):
 	"""
-		to be used as a 'with' context
+		to be used as a 'with' context. see python's 'with_statement'
 	"""
 	class context(object):
 		def __enter__(self):
