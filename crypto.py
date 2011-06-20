@@ -24,16 +24,16 @@ class Crypto(object):
 	"""
 	def __init__(self, secret):
 		self.__secret = secret
-		from Crypto.Cipher import AES
-		self.aes = AES.new(secret, AES.MODE_ECB)
+		from Crypto.Cipher import DES3
+		self.cipher = DES3.new(secret, DES3.MODE_ECB)
 	
 	def enc(self, plaintext):
 		length = len(plaintext)
-		if length%16 != 0:
-			padlength = 16 - length%16
+		if length%8 != 0:
+			padlength = 8 - length%8
 			plaintext = plaintext + '\0'*padlength
-		cipher = self.aes.encrypt(plaintext)
-		return base64.b32encode(cipher)[:-6]
+		cipher = self.cipher.encrypt(plaintext)
+		return base64.b64encode(cipher)[:-1].replace("+", "*").replace("/", "_")
 
 	def encid(self, plaintext):
 		if not isinstance(plaintext, (int, long)):
@@ -48,8 +48,8 @@ class Crypto(object):
 		return self.encid(plaintext)
 
 	def dec(self, ciphertext):
-		ciphertext = base64.b32decode(ciphertext+"======")
-		plaintext = self.aes.decrypt(ciphertext).rstrip('\0')
+		ciphertext = base64.b64decode(ciphertext.replace("*", "+").replace("_", "/")+"=")
+		plaintext = self.cipher.decrypt(ciphertext).rstrip('\0')
 		return plaintext
 
 	def decid(self, ciphertext):
@@ -62,3 +62,8 @@ class Crypto(object):
 	def decid_safe(self, ciphertext):
 		if ciphertext is None: return None
 		return self.decid(ciphertext)
+
+if __name__ == '__main__':
+  c = Crypto("q"*16)
+  for i in range(10):
+    print i, c.encid(i), i == c.decid(c.encid(i))
